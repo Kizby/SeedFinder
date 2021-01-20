@@ -11,7 +11,7 @@ namespace XRL.SeedFinder {
         public const string Name = "Kizby"; // change this if you want
         public const int StartingLocation = 0; // {Joppa, marsh, dunes, canyon, hills}
 
-        public static ulong _Seed = 483;
+        public static ulong _Seed = Decode("PQ");
         public static string Seed => Encode(_Seed);
 
         public static bool Running = false;
@@ -22,6 +22,19 @@ namespace XRL.SeedFinder {
                 result = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[(int)(num % 36ul)] + result;
                 num /= 36;
             } while (num != 0);
+            return result;
+        }
+
+        public static ulong Decode(string num) {
+            ulong result = 0;
+            foreach (var c in num) {
+                result *= 36;
+                if ('0' <= c && c <= '9') {
+                    result += (ulong)(c - '0');
+                } else {
+                    result += (ulong)(c - 'A') + 10;
+                }
+            }
             return result;
         }
 
