@@ -1,16 +1,17 @@
 namespace XRL.SeedFinder {
+    using System;
     using System.Collections.Generic;
     using System.Reflection.Emit;
+    using ConsoleLib.Console;
     using HarmonyLib;
     using XRL.Core;
     using XRL.UI;
-    using XRL.World.Parts;
 
     public static class State {
         public const string Name = "Kizby"; // change this if you want
         public const int StartingLocation = 0; // {Joppa, marsh, dunes, canyon, hills}
 
-        public static ulong _Seed = 0;
+        public static ulong _Seed = 483;
         public static string Seed => Encode(_Seed);
 
         public static bool Running = false;
@@ -27,6 +28,10 @@ namespace XRL.SeedFinder {
         public static bool Test() {
             var player = XRLCore.Core.Game.Player.Body;
             return player.Inventory.HasObject(o => o.GetLongProperty("Nanocrayons") == 1);
+        }
+
+        public static bool AfterNewGame() {
+            return Running;
         }
     }
     [HarmonyPatch(typeof(CreateCharacter), "PickGameType")]
@@ -120,9 +125,36 @@ namespace XRL.SeedFinder {
                     break;
                 }
             }
-            yield return new CodeInstruction(OpCodes.Ldsfld, AccessTools.Field(typeof(State), "Running"));
-            // branch to "start" instead of returning at the end if we're running
+            yield return new CodeInstruction(OpCodes.Callvirt, AccessTools.Method(typeof(State), "AfterNewGame"));
+            // branch to "start" instead of returning at the end if AfterNewGame tells us to
             yield return new CodeInstruction(OpCodes.Brtrue, start);
+        }
+    }
+    [HarmonyPatch(typeof(WorldCreationProgress), "Draw")]
+    public static class PatchDraw {
+        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
+            bool replaceNext = false;
+            bool replaced = false;
+            foreach (var inst in instructions) {
+                if (!replaced && replaceNext) {
+                    // instead of popping, call our function on the returned screen buffer
+                    yield return new CodeInstruction(OpCodes.Callvirt, AccessTools.Method(typeof(PatchDraw), "AddToScreenBuffer"));
+                    replaced = true;
+                } else {
+                    yield return inst;
+                }
+                if (!replaced && inst.Is(OpCodes.Callvirt, AccessTools.Method(typeof(ScreenBuffer), "Write", new Type[] { typeof(string), typeof(bool) }))) {
+                    // take the output of this call to write
+                    replaceNext = true;
+                }
+            }
+        }
+
+        static void AddToScreenBuffer(ScreenBuffer screenBuffer) {
+            var _ = screenBuffer.Goto(5, 22)
+                                .Write("World Seed: " + XRLCore.Core.Game.GetStringGameState("OriginalWorldSeed"))
+                                .Goto(30, 22)
+                                .Write("Memory: " + GC.GetTotalMemory(false));
         }
     }
 }
