@@ -1,7 +1,6 @@
 namespace XRL.SeedFinder {
     using System.Collections.Generic;
     using System.Reflection.Emit;
-    using ConsoleLib.Console;
     using HarmonyLib;
     using XRL.Core;
     using XRL.UI;
@@ -12,7 +11,7 @@ namespace XRL.SeedFinder {
         public static ulong _Seed = 0;
         public static string Seed => Encode(_Seed);
 
-        public static Queue<Keys> ForceKeys = new Queue<Keys>();
+        public static bool Running = false;
 
         public static string Encode(ulong num) {
             string result = "";
@@ -30,6 +29,9 @@ namespace XRL.SeedFinder {
     [HarmonyPatch(typeof(CreateCharacter), "PickGameType")]
     public static class PatchPickGameType {
         static bool Prefix(ref string __result) {
+            // if we get here, we're running
+            State.Running = true;
+
             XRLCore.Core.Game.PlayerName = State.Name;
             __result = "<manualseed>";
             return false;
@@ -40,6 +42,7 @@ namespace XRL.SeedFinder {
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
             foreach (var inst in instructions) {
                 if (inst.Is(OpCodes.Ldsfld, AccessTools.Field(typeof(CreateCharacter), "Code"))) {
+                    // skip everything starting with generating the character code, it's unneeded
                     yield return new CodeInstruction(OpCodes.Ldc_I4_1);
                     yield return new CodeInstruction(OpCodes.Ret);
                     break;
@@ -92,7 +95,31 @@ namespace XRL.SeedFinder {
                 ++State._Seed;
                 return false;
             }
+            State.Running = false;
             return true;
+        }
+    }
+    [HarmonyPatch(typeof(XRLCore), "NewGame")]
+    public static class PatchNewGame {
+        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator) {
+            var start = generator.DefineLabel();
+            bool first = true;
+            foreach (var inst in instructions) {
+                var actual = inst;
+                if (first) {
+                    // add a "start" label to the first instruction
+                    actual = new CodeInstruction(inst);
+                    actual.labels.Add(start);
+                    first = false;
+                }
+                yield return actual;
+                if (inst.Is(OpCodes.Callvirt, AccessTools.Method(typeof(GameManager), "PopGameView"))) {
+                    break;
+                }
+            }
+            yield return new CodeInstruction(OpCodes.Ldsfld, AccessTools.Field(typeof(State), "Running"));
+            // branch to "start" instead of returning at the end if we're running
+            yield return new CodeInstruction(OpCodes.Brtrue, start);
         }
     }
 }

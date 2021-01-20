@@ -3,7 +3,7 @@
 		<AssemblyName>Mods</AssemblyName>
 		<PackageId>Mods</PackageId>
 		<Authors>gnarf, Armithaig, Freehold Games</Authors>
-		<TargetFramework>netstandard2.0</TargetFramework>
+		<TargetFramework>net46</TargetFramework>
 		<LangVersion>7</LangVersion>
 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 		<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
