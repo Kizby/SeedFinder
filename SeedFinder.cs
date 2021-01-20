@@ -4,6 +4,8 @@ namespace XRL.SeedFinder {
     using HarmonyLib;
     using XRL.Core;
     using XRL.UI;
+    using XRL.World.Parts;
+
     public static class State {
         public const string Name = "Kizby"; // change this if you want
         public const int StartingLocation = 0; // {Joppa, marsh, dunes, canyon, hills}
@@ -23,7 +25,8 @@ namespace XRL.SeedFinder {
         }
 
         public static bool Test() {
-            return _Seed % 4 == 3;
+            var player = XRLCore.Core.Game.Player.Body;
+            return player.Inventory.HasObject(o => o.GetLongProperty("Nanocrayons") == 1);
         }
     }
     [HarmonyPatch(typeof(CreateCharacter), "PickGameType")]
