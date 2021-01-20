@@ -1,0 +1,9 @@
+{
+	"id": "SeedFinder",
+	"title": "SeedFinder",
+	"description": "Utility to find a world seed with desired properties.",
+	"tags": "Speedrunning",
+	"version": "0.1-alpha",
+	"author": "Kizby",
+	"previewImage": "preview.png"
+}
