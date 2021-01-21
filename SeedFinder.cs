@@ -11,7 +11,7 @@ namespace XRL.SeedFinder {
         public const string Name = "Kizby"; // change this if you want
         public const int StartingLocation = 0; // {Joppa, marsh, dunes, canyon, hills}
 
-        public static ulong _Seed = Decode("PQ");
+        public static ulong _Seed = Decode("61J");
         public static string Seed => Encode(_Seed);
 
         public static bool Running = false;
