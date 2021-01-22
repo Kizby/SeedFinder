@@ -16,7 +16,7 @@ namespace XRL.SeedFinder {
         public const int StartingLocation = 0; // {Joppa, marsh, dunes, canyon, hills}
 
         public static string Seed;
-        public static int SeedLength = 8;
+        public static int SeedLength = 6;
 
         // set to true for significantly faster iteration of seeds, though the greater world won't be
         // available for inspection and the game won't be in a playable state after
@@ -30,7 +30,6 @@ namespace XRL.SeedFinder {
 
         public static bool ShouldTryAgain() {
             if (!Test()) {
-                Seed = NextSeed();
                 GameManager.Instance.PopGameView(); // clear away the WorldCreationProgress screen
                 return true;
             }
