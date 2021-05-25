@@ -15,8 +15,8 @@ namespace XRL.SeedFinder {
     using XRL.World;
 
     public static class State {
-        public const string Name = "Kizby"; // change this if you want
-        public const int StartingLocation = 0; // {Joppa, marsh, dunes, canyon, hills}
+        public static string Name = "Kizby"; // change this if you want
+        public static string StartingLocation;
 
         public static string Seed;
         public static int SeedLength = 6;
@@ -30,6 +30,8 @@ namespace XRL.SeedFinder {
 
         public static long InitialMemory = -1;
         public static bool Running;
+        public static string Mode;
+        public static string BuildCode;
 
         static State() {
             Running = Environment.CommandLine.Contains("-continueSeedFinder");
@@ -41,6 +43,7 @@ namespace XRL.SeedFinder {
 
         public static bool ShouldTryAgain() {
             if (!Test()) {
+                Running = true;
                 if (InitialMemory < 0) {
                     InitialMemory = GC.GetTotalMemory(false);
                 } else if (GC.GetTotalMemory(false) > 2 * InitialMemory) {
@@ -89,55 +92,80 @@ namespace XRL.SeedFinder {
             }
         }
     }
-    [HarmonyPatch(typeof(CreateCharacter), "PickGameType")]
+    [HarmonyPatch(typeof(CreateCharacter), "PickGameMode")]
     public static class PatchPickGameType {
         static bool Prefix(ref string __result) {
-            State.Running = true; // definitely running by now
-
-            XRLCore.Core.Game.PlayerName = State.Name;
-            __result = "<manualseed>";
-            return false;
+            if (State.Running) {
+                XRLCore.Core.Game.PlayerName = State.Name;
+                __result = State.Mode;
+                return false;
+            }
+            return true;
+        }
+        static void Postfix(ref string __result) {
+            State.Mode = __result;
         }
     }
-    [HarmonyPatch(typeof(Popup), "AskString")]
-    public static class PatchAskString {
-        static bool Prefix(ref string Message, ref string __result) {
-            if (Message == "Enter a world seed.") {
-                State.Seed = State.NextSeed();
-                __result = State.Seed;
+    [HarmonyPatch(typeof(CreateCharacter), "PickChargenType")]
+    public static class PatchPickChargenType {
+        static bool Prefix(ref string __result) {
+            if (State.BuildCode != null) {
+                __result = "<library>";
+                return false;
+            }
+            return true;
+        }
+    }
+    [HarmonyPatch(typeof(CreateCharacter), "BuildLibraryManagement")]
+    public static class PatchBuildLibraryManagement {
+        static bool Prefix(ref string __result) {
+            if (State.BuildCode != null) {
+                __result = State.BuildCode;
                 return false;
             }
             return true;
         }
     }
     [HarmonyPatch(typeof(CreateCharacter), "GenerateCharacter")]
-    public static class PatchCreateCharacter {
-        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
+    public static class PatchGenerateCharacter {
+        static void Prefix() {
+            The.Game.PlayerName = State.Name;
+            CreateCharacter.WorldSeed = State.Seed = State.NextSeed();
+        }
+        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator) {
+            bool Patched = false;
             foreach (var inst in instructions) {
-                if (inst.Is(OpCodes.Ldsfld, AccessTools.Field(typeof(CreateCharacter), "Code"))) {
-                    // skip everything starting with generating the character code, it's unneeded
+                // skip everything starting with generating the character code, it's unneeded
+                if (!Patched && inst.Is(OpCodes.Ldsfld, AccessTools.Field(typeof(CreateCharacter), "Code"))) {
+                    yield return new CodeInstruction(OpCodes.Ldsfld, AccessTools.Field(typeof(State), "Running"));
+                    Label label = generator.DefineLabel();
+                    yield return new CodeInstruction(OpCodes.Brfalse, label);
                     yield return new CodeInstruction(OpCodes.Ldc_I4_1);
                     yield return new CodeInstruction(OpCodes.Ret);
-                    break;
+                    yield return new CodeInstruction(inst).WithLabels(label);
+                    Patched = true;
+                } else {
+                    yield return inst;
                 }
-                yield return inst;
             }
         }
     }
     [HarmonyPatch(typeof(CreateCharacter), "Embark")]
     public static class PatchEmbark {
         static bool Prefix(ref bool __result) {
-            List<string> list = new List<string>{
-                "&YJoppa",
-                "&YRandom village in the salt marsh",
-                "&YRandom village in the salt dunes",
-                "&YRandom village in the desert canyons",
-                "&YRandom village in the hills",
-            };
-            XRLCore.Core.Game.SetStringGameState("embark", list[State.StartingLocation]);
+            State.BuildCode = CreateCharacter.Code.ToString().ToUpper();
+            if (State.StartingLocation != null) {
+                The.Game.SetStringGameState("embark", State.StartingLocation);
 
-            __result = true;
-            return false;
+                __result = true;
+                return false;
+            }
+            return true;
+        }
+        static void Postfix() {
+            if (State.StartingLocation == null) {
+                State.StartingLocation = The.Game.GetStringGameState("embark");
+            }
         }
     }
     [HarmonyPatch(typeof(XRLCore), "NewGame")]
