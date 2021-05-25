@@ -301,6 +301,16 @@ namespace XRL.SeedFinder {
             }
         }
     }
+    [HarmonyPatch(typeof(ModPainted), "GeneratePainting")]
+    public static class PatchGeneratePainting {
+        static void Prefix(ref ModPainted __instance) {
+            if (State.StubWorldbuilding) {
+                // no gods, no masters, so we need something to engrave on shit
+                __instance.Sultan = "unormal";
+                __instance.Engraving = "C'est une " + __instance.ParentObject.ShortDisplayNameSingle;
+            }
+        }
+    }
     [HarmonyPatch(typeof(QudHistoryFactory), "GenerateVillageEraHistory")]
     public static class PatchGenerateVillageEraHistory {
         static bool Prefix(History history, ref History __result) {
