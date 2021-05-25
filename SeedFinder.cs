@@ -13,13 +13,14 @@ namespace XRL.SeedFinder {
     using XRL.Core;
     using XRL.UI;
     using XRL.World;
+    using XRL.World.Parts;
 
     public static class State {
         public static string Name = "Kizby"; // change this if you want
         public static string StartingLocation;
 
         public static string Seed;
-        public static int SeedLength = 6;
+        public static int LongestSeed = 6;
 
         // set to true for significantly faster iteration of seeds, though the greater world won't be
         // available for inspection and the game won't be in a playable state after
@@ -34,7 +35,26 @@ namespace XRL.SeedFinder {
         public static string BuildCode;
 
         static State() {
-            Running = Environment.CommandLine.Contains("-continueSeedFinder");
+            if (Environment.CommandLine.Contains("-continueSeedFinder")) {
+                Running = true;
+                foreach (var arg in Environment.GetCommandLineArgs()) {
+                    if (arg.StartsWith("-mode")) {
+                        Mode = Base64Decode(arg.After('=', false));
+                    }
+                    if (arg.StartsWith("-buildCode")) {
+                        BuildCode = Base64Decode(arg.After('=', false));
+                    }
+                    if (arg.StartsWith("-name")) {
+                        Name = Base64Decode(arg.After('=', false));
+                    }
+                    if (arg.StartsWith("-startingLocation")) {
+                        StartingLocation = Base64Decode(arg.After('=', false));
+                    }
+                    if (arg.StartsWith("-seed")) {
+                        StartingLocation = Base64Decode(arg.After('=', false));
+                    }
+                }
+            }
         }
         public static bool Test() {
             var player = CreateCharacter.Template.PlayerBody;
@@ -59,13 +79,18 @@ namespace XRL.SeedFinder {
             return false;
         }
 
-        public static string NextSeed() {
-            byte[] bytes = new byte[SeedLength];
+        // this implementation doesn't use any state from the current seed, but feel free to use
+        // this parameter for e.g. sequential seeds
+        public static string NextSeed(string _) {
+            byte[] bytes = new byte[6];
             random.GetBytes(bytes);
             string result = "";
             for (int i = 0; i < bytes.Length; ++i) {
                 // slight bias for some characters, but we don't really care
                 result += "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[bytes[i] * 36 / 256];
+            }
+            if (result.Length > LongestSeed) {
+                LongestSeed = result.Length;
             }
             return result;
         }
@@ -79,6 +104,12 @@ namespace XRL.SeedFinder {
             string commandLine = Environment.CommandLine;
             if (!commandLine.Contains("continueSeedFinder")) {
                 commandLine += " -continueSeedFinder";
+                // blech, not really a cleaner way to pass arbitrary names; may as well encode everything to futureproof
+                commandLine += " -mode=" + Base64Encode(Mode);
+                commandLine += " -buildCode=" + Base64Encode(BuildCode);
+                commandLine += " -name=" + Base64Encode(Name);
+                commandLine += " -startingLocation=" + Base64Encode(StartingLocation);
+                commandLine += " -seed=" + Base64Encode(Seed);
             }
             if (Environment.OSVersion.Platform == PlatformID.Win32NT) {
                 ProcessStartInfo Info = new ProcessStartInfo("cmd.exe", "/C ping 127.0.0.1 -n 2 && " + commandLine) {
@@ -91,12 +122,13 @@ namespace XRL.SeedFinder {
                 // anyone on another OS is encouraged to implement it ♥
             }
         }
+        public static string Base64Encode(string input) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(input));
+        public static string Base64Decode(string input) => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(input));
     }
     [HarmonyPatch(typeof(CreateCharacter), "PickGameMode")]
-    public static class PatchPickGameType {
+    public static class PatchPickGameMode {
         static bool Prefix(ref string __result) {
             if (State.Running) {
-                XRLCore.Core.Game.PlayerName = State.Name;
                 __result = State.Mode;
                 return false;
             }
@@ -130,7 +162,9 @@ namespace XRL.SeedFinder {
     public static class PatchGenerateCharacter {
         static void Prefix() {
             The.Game.PlayerName = State.Name;
-            CreateCharacter.WorldSeed = State.Seed = State.NextSeed();
+            The.Game.PlayerReputation.Init();
+            CreateCharacter.WorldSeed = State.Seed = State.NextSeed(State.Seed);
+
         }
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator) {
             bool Patched = false;
@@ -153,7 +187,9 @@ namespace XRL.SeedFinder {
     [HarmonyPatch(typeof(CreateCharacter), "Embark")]
     public static class PatchEmbark {
         static bool Prefix(ref bool __result) {
-            State.BuildCode = CreateCharacter.Code.ToString().ToUpper();
+            if (State.BuildCode == null) {
+                State.BuildCode = CreateCharacter.Code.ToString().ToUpper();
+            }
             if (State.StartingLocation != null) {
                 The.Game.SetStringGameState("embark", State.StartingLocation);
 
@@ -201,23 +237,17 @@ namespace XRL.SeedFinder {
     [HarmonyPatch(typeof(XRLCore), "_Start")]
     public static class PatchStart {
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator) {
-            Label? label = null;
             foreach (var inst in instructions) {
-                if (label.HasValue) {
-                    CodeInstruction actual = new CodeInstruction(inst);
-                    actual.labels.Add(label.Value);
-                    label = null;
-                    yield return actual;
-                } else {
-                    yield return inst;
-                }
                 // if we've just restarted (can tell from command line), go right into new game workflow
                 if (inst.Is(OpCodes.Call, AccessTools.Method(typeof(XRLCore), "LoadEverything"))) {
                     yield return new CodeInstruction(OpCodes.Ldsfld, AccessTools.Field(typeof(State), "Running"));
-                    label = generator.DefineLabel();
+                    Label label = generator.DefineLabel();
                     yield return new CodeInstruction(OpCodes.Brfalse, label);
                     yield return new CodeInstruction(OpCodes.Ldarg_0);
                     yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(XRLCore), "NewGame"));
+                    yield return new CodeInstruction(inst).WithLabels(label);
+                } else {
+                    yield return inst;
                 }
             }
         }
@@ -245,10 +275,10 @@ namespace XRL.SeedFinder {
         static void AddToScreenBuffer(ScreenBuffer screenBuffer) {
             var _ = screenBuffer.Goto(5, 22)
                                 .Write("Seed: " + XRLCore.Core.Game.GetStringGameState("OriginalWorldSeed"))
-                                .Goto(15 + State.SeedLength, 22)
+                                .Goto(15 + State.LongestSeed, 22)
                                 .Write("Memory: " + GC.GetTotalMemory(false))
-                                .Goto(35 + State.SeedLength, 22)
-                                .Write("Class: " + CreateCharacter.Template.Genotype + " " + CreateCharacter.Template.Subtype);
+                                .Goto(35 + State.LongestSeed, 22)
+                                .Write("Build Code: " + State.BuildCode);
         }
     }
     [HarmonyPatch(typeof(QudHistoryFactory), "GenerateNewSultanHistory")]
@@ -259,6 +289,16 @@ namespace XRL.SeedFinder {
             }
             __result = new History(1);
             return false;
+        }
+    }
+    [HarmonyPatch(typeof(ModEngraved), "GenerateEngraving")]
+    public static class PatchGenerateEngraving {
+        static void Prefix(ref ModEngraved __instance) {
+            if (State.StubWorldbuilding) {
+                // no gods, no masters, so we need something to engrave on shit
+                __instance.Sultan = "unormal";
+                __instance.Engraving = "Ceci n'est pas une " + __instance.ParentObject.ShortDisplayNameSingle;
+            }
         }
     }
     [HarmonyPatch(typeof(QudHistoryFactory), "GenerateVillageEraHistory")]
