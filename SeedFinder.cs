@@ -8,6 +8,7 @@ namespace XRL.SeedFinder {
     using AiUnity.Common.Extensions;
     using ConsoleLib.Console;
     using HarmonyLib;
+    using HistoryKit;
     using XRL.Annals;
     using XRL.Core;
     using XRL.UI;
@@ -18,7 +19,7 @@ namespace XRL.SeedFinder {
         public const int StartingLocation = 0; // {Joppa, marsh, dunes, canyon, hills}
 
         public static string Seed;
-        public static int SeedLength = 8;
+        public static int SeedLength = 6;
 
         // set to true for significantly faster iteration of seeds, though the greater world won't be
         // available for inspection and the game won't be in a playable state after
@@ -206,7 +207,7 @@ namespace XRL.SeedFinder {
                 } else {
                     yield return inst;
                 }
-                if (!replaced && inst.Is(OpCodes.Callvirt, AccessTools.Method(typeof(ScreenBuffer), "Write", new Type[] { typeof(string), typeof(bool) }))) {
+                if (!replaced && inst.Is(OpCodes.Callvirt, AccessTools.Method(typeof(ScreenBuffer), "Write", new Type[] { typeof(string), typeof(bool), typeof(bool), typeof(bool) }))) {
                     // take the output of this call to write
                     replaceNext = true;
                 }
@@ -224,11 +225,21 @@ namespace XRL.SeedFinder {
     }
     [HarmonyPatch(typeof(QudHistoryFactory), "GenerateNewSultanHistory")]
     public static class PatchGenerateNewSultanHistory {
-        static bool Prefix(ref HistoryKit.History __result) {
+        static bool Prefix(ref History __result) {
             if (!State.StubWorldbuilding) {
                 return true;
             }
-            __result = new HistoryKit.History(1);
+            __result = new History(1);
+            return false;
+        }
+    }
+    [HarmonyPatch(typeof(QudHistoryFactory), "GenerateVillageEraHistory")]
+    public static class PatchGenerateVillageEraHistory {
+        static bool Prefix(History history, ref History __result) {
+            if (!State.StubWorldbuilding) {
+                return true;
+            }
+            __result = history;
             return false;
         }
     }
